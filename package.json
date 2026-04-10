@@ -1,0 +1,20 @@
+{
+  "name": "openclaw-status",
+  "version": "1.1.0",
+  "description": "OpenClaw Status Monitor Dashboard + Web Terminal",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+  },
+  "keywords": [
+    "openclaw",
+    "status",
+    "monitor",
+    "dashboard",
+    "terminal"
+  ],
+  "license": "MIT"
+}

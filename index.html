@@ -1,0 +1,1900 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw 状态监控</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='80'>⌘</text></svg>">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ─── 夜间主题（默认） ─── */
+  :root {
+    --bg: #0a0e17;
+    --bg-card: #111827;
+    --bg-card-hover: #1a2332;
+    --border: #1e293b;
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --text-bright: #f8fafc;
+    --green: #22c55e;
+    --green-dim: #166534;
+    --red: #ef4444;
+    --red-dim: #7f1d1d;
+    --amber: #f59e0b;
+    --amber-dim: #78350f;
+    --blue: #3b82f6;
+    --cyan: #06b6d4;
+    --purple: #a855f7;
+    --radius: 12px;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    --grid-opacity: 0.03;
+    --card-bg-alpha: 0.08;
+    --overlay-alpha: 0.95;
+    --bg-alpha: 1;
+  }
+
+  /* ─── 日间主题 ─── */
+  .light-mode {
+    --bg: #f0f2f5;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f8f9fa;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --text-dim: #94a3b8;
+    --text-bright: #0f172a;
+    --green-dim: #dcfce7;
+    --red-dim: #fee2e2;
+    --amber-dim: #fef3c7;
+    --grid-opacity: 0.04;
+    --card-bg-alpha: 0.05;
+    --overlay-alpha: 0.92;
+  }
+
+  html { font-size: 15px; }
+  body {
+    background: transparent;
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    line-height: 1.6;
+    transition: background 0.4s, color 0.4s;
+    position: relative;
+  }
+
+  /* 底色层（跟随透明度） */
+  body > .bg-layer {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    opacity: var(--bg-alpha);
+    pointer-events: none;
+    z-index: 0;
+    transition: opacity 0.3s;
+  }
+
+  /* 背景网格 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(59,130,246,var(--grid-opacity)) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,var(--grid-opacity)) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+    opacity: var(--bg-alpha);
+  }
+
+  /* 自定义壁纸层 */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0;
+    transition: opacity 0.5s;
+    pointer-events: none;
+    z-index: 0;
+  }
+  body.has-wallpaper::after {
+    opacity: calc(0.12 * var(--bg-alpha));
+  }
+  .light-mode.has-wallpaper::after {
+    opacity: calc(0.2 * var(--bg-alpha));
+  }
+
+  /* 日间模式有壁纸时底色层半透明 */
+  .light-mode .bg-layer {
+    background: rgba(240, 242, 245, 0.55);
+  }
+
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    position: relative;
+    z-index: 1;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .header-left { display: flex; align-items: center; gap: 1rem; }
+  .logo {
+    font-size: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .logo-text {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 1.4rem;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--blue), var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .logo-sub {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    font-family: var(--sans);
+    letter-spacing: 0.05em;
+  }
+  .header-right { display: flex; align-items: center; gap: 0.75rem; }
+
+  /* ─── 工具按钮通用 ─── */
+  .icon-btn {
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-dim);
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .icon-btn:hover {
+    background: var(--bg-card-hover);
+    color: var(--text);
+    border-color: rgba(59,130,246,0.3);
+  }
+  .icon-btn .tooltip {
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.65rem;
+    font-family: var(--sans);
+    color: var(--text-dim);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+  .icon-btn:hover .tooltip { opacity: 1; }
+
+  .term-btn {
+    font-family: var(--sans);
+    font-size: 0.78rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 8px;
+    background: rgba(59,130,246,0.12);
+    border: 1px solid rgba(59,130,246,0.3);
+    color: var(--blue);
+    text-decoration: none;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .term-btn:hover {
+    background: rgba(59,130,246,0.22);
+    border-color: rgba(59,130,246,0.5);
+    color: #60a5fa;
+  }
+
+  .live-dot {
+    width: 8px; height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+    box-shadow: 0 0 8px var(--green);
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+  .refresh-text {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .last-update {
+    font-family: var(--sans);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+  }
+
+  .gateway-banner {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    border-radius: var(--radius);
+    margin-bottom: 1.5rem;
+    border: 1px solid;
+    transition: all 0.3s ease;
+  }
+  .gateway-banner.running {
+    background: rgba(34, 197, 94, var(--card-bg-alpha));
+    border-color: var(--green-dim);
+  }
+  .gateway-banner.stopped, .gateway-banner.unknown, .gateway-banner.inactive {
+    background: rgba(239, 68, 68, var(--card-bg-alpha));
+    border-color: var(--red-dim);
+  }
+  .gateway-status-icon { font-size: 1.8rem; line-height: 1; }
+  .gateway-info { flex: 1; }
+  .gateway-label {
+    font-family: var(--sans);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 0.15rem;
+  }
+  .gateway-state { font-weight: 600; font-size: 1.1rem; }
+  .gateway-state.up { color: var(--green); }
+  .gateway-state.down { color: var(--red); }
+  .gateway-meta {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 0.2rem;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 500px) { .stats-grid { grid-template-columns: 1fr; } }
+
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card:hover {
+    background: var(--bg-card-hover);
+    border-color: rgba(59,130,246,0.3);
+  }
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--blue), var(--cyan));
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .stat-card:hover::after { opacity: 1; }
+  .stat-label {
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .cache-btn {
+    margin-left: auto;
+    font-family: var(--sans);
+    font-size: 0.65rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+    border: 1px solid rgba(245,158,11,0.3);
+    background: rgba(245,158,11,0.1);
+    color: var(--amber);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .cache-btn:hover {
+    background: rgba(245,158,11,0.2);
+    border-color: rgba(245,158,11,0.5);
+  }
+  .cache-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-bright);
+    line-height: 1.2;
+  }
+  .stat-detail {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-top: 0.3rem;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    margin-top: 0.75rem;
+    overflow: hidden;
+  }
+  .light-mode .progress-bar { background: rgba(0,0,0,0.06); }
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.8s ease;
+  }
+  .progress-fill.green { background: linear-gradient(90deg, #22c55e, #4ade80); }
+  .progress-fill.amber { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  .progress-fill.red { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+  .panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  @media (max-width: 768px) { .panels { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title {
+    font-family: var(--sans);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .panel-badge {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 99px;
+    background: rgba(59,130,246,0.15);
+    color: var(--blue);
+  }
+  .panel-body { padding: 1rem 1.25rem; }
+
+  .process-item {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+  }
+  .light-mode .process-item { border-bottom-color: rgba(0,0,0,0.05); }
+  .process-item:last-child { border-bottom: none; }
+  .process-cpu { width: 3.5rem; color: var(--cyan); font-weight: 500; }
+  .process-mem { width: 3.5rem; color: var(--purple); font-weight: 500; }
+  .process-cmd {
+    flex: 1;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .session-item {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+  }
+  .light-mode .session-item { border-bottom-color: rgba(0,0,0,0.05); }
+  .session-item:last-child { border-bottom: none; }
+  .session-id { color: var(--text-bright); font-weight: 500; }
+  .session-meta { color: var(--text-dim); margin-top: 0.15rem; }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.3rem 1rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+  }
+  .info-key { color: var(--text-dim); white-space: nowrap; }
+  .info-val { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+
+  .footer {
+    text-align: center;
+    padding: 2rem 0 1rem;
+    font-family: var(--sans);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+  }
+  .footer a { color: var(--blue); text-decoration: none; }
+
+  /* ─── 壁纸弹窗 ─── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .modal-overlay.show { opacity: 1; pointer-events: auto; }
+  .modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2rem;
+    width: 440px;
+    max-width: 90vw;
+  }
+  .modal-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+  }
+  .modal-sub {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 1.25rem;
+  }
+  .modal-input {
+    width: 100%;
+    padding: 0.65rem 0.9rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    outline: none;
+    transition: border-color 0.2s;
+    margin-bottom: 0.75rem;
+  }
+  .light-mode .modal-input { background: rgba(0,0,0,0.03); }
+  .modal-input:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+  }
+  .modal-input::placeholder { color: var(--text-dim); }
+  .modal-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+  .modal-btn {
+    font-family: var(--sans);
+    font-size: 0.78rem;
+    padding: 0.45rem 1rem;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .modal-btn:hover { background: rgba(255,255,255,0.05); }
+  .modal-btn.primary {
+    background: linear-gradient(135deg, var(--blue), var(--cyan));
+    border-color: transparent;
+    color: #fff;
+  }
+  .modal-btn.primary:hover { opacity: 0.9; }
+  .modal-btn.danger {
+    border-color: rgba(239,68,68,0.3);
+    color: var(--red);
+  }
+  .modal-btn.danger:hover { background: rgba(239,68,68,0.1); }
+
+  .wallpaper-presets {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .wallpaper-preset {
+    width: 56px; height: 38px;
+    border-radius: 6px;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    background-size: cover;
+    background-position: center;
+    transition: all 0.15s;
+  }
+  .wallpaper-preset:hover, .wallpaper-preset.active {
+    border-color: var(--blue);
+    transform: scale(1.08);
+  }
+
+  /* ─── 上传区域 ─── */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 0.75rem;
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--blue);
+    background: rgba(59,130,246,0.06);
+  }
+  .upload-zone-icon { font-size: 1.6rem; margin-bottom: 0.3rem; }
+  .upload-zone-text {
+    font-family: var(--sans);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .upload-zone-hint {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    opacity: 0.6;
+    margin-top: 0.2rem;
+  }
+  .upload-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .upload-preview {
+    display: none;
+    margin-bottom: 0.75rem;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .upload-preview img {
+    width: 100%;
+    max-height: 120px;
+    object-fit: cover;
+    display: block;
+  }
+  .upload-preview.show { display: block; }
+
+  /* ─── Logo 弹窗 ─── */
+  .logo-emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+  .logo-emoji-btn {
+    font-size: 1.3rem;
+    padding: 0.4rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .logo-emoji-btn:hover, .logo-emoji-btn.active {
+    border-color: var(--blue);
+    background: rgba(59,130,246,0.1);
+    transform: scale(1.1);
+  }
+  .logo-img-preview {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 0.75rem;
+    overflow: hidden;
+    font-size: 2.2rem;
+    background: var(--bg-card-hover);
+  }
+  .logo-img-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .form-label {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-bottom: 0.25rem;
+    font-family: var(--sans);
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in { animation: fadeIn 0.4s ease-out forwards; opacity: 0; }
+  .delay-1 { animation-delay: 0.05s; }
+  .delay-2 { animation-delay: 0.1s; }
+  .delay-3 { animation-delay: 0.15s; }
+  .delay-4 { animation-delay: 0.2s; }
+  .delay-5 { animation-delay: 0.25s; }
+  .delay-6 { animation-delay: 0.3s; }
+
+  /* ─── 透明度弹窗 ─── */
+  .opacity-popup {
+    position: fixed;
+    top: 60px;
+    right: 180px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.2rem;
+    z-index: 300;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-6px);
+    transition: all 0.2s;
+    min-width: 200px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+  .opacity-popup.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+  .opacity-popup-title {
+    font-family: var(--sans);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .opacity-popup-title span:last-child {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--text-bright);
+  }
+  .opacity-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, rgba(59,130,246,0.2), var(--blue));
+    outline: none;
+    cursor: pointer;
+  }
+  .opacity-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--blue);
+    border: 2px solid var(--bg-card);
+    box-shadow: 0 0 6px rgba(59,130,246,0.5);
+    cursor: pointer;
+  }
+  .opacity-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--blue);
+    border: 2px solid var(--bg-card);
+    box-shadow: 0 0 6px rgba(59,130,246,0.5);
+    cursor: pointer;
+  }
+  .opacity-presets {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+  }
+  .opacity-preset-btn {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    padding: 0.3rem 0;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .opacity-preset-btn:hover, .opacity-preset-btn.active {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: rgba(59,130,246,0.1);
+  }
+
+  /* ─── 控制面板 ─── */
+  .ctrl-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  @media (max-width: 768px) { .ctrl-row { grid-template-columns: 1fr; } }
+
+  .ctrl-btn-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .ctrl-btn {
+    font-family: var(--sans);
+    font-size: 0.78rem;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .ctrl-btn:hover {
+    border-color: rgba(59,130,246,0.4);
+    background: var(--bg-card-hover);
+  }
+  .ctrl-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .ctrl-btn.danger:hover {
+    border-color: rgba(239,68,68,0.5);
+    background: rgba(239,68,68,0.08);
+    color: var(--red);
+  }
+  .ctrl-btn.success:hover {
+    border-color: rgba(34,197,94,0.5);
+    background: rgba(34,197,94,0.08);
+    color: var(--green);
+  }
+  .ctrl-btn.primary:hover {
+    border-color: rgba(59,130,246,0.5);
+    background: rgba(59,130,246,0.1);
+    color: var(--blue);
+  }
+
+  /* 模型列表 */
+  .model-list {
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .model-item {
+    display: flex;
+    align-items: center;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    gap: 0.5rem;
+  }
+  .light-mode .model-item { border-bottom-color: rgba(0,0,0,0.05); }
+  .model-item:last-child { border-bottom: none; }
+  .model-name {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-bright);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .model-provider {
+    font-family: var(--sans);
+    font-size: 0.65rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    background: rgba(168,85,247,0.12);
+    color: var(--purple);
+  }
+  .model-active {
+    font-family: var(--sans);
+    font-size: 0.65rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    background: rgba(34,197,94,0.12);
+    color: var(--green);
+  }
+  .model-action-btn {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .model-action-btn:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: rgba(59,130,246,0.08);
+  }
+  .model-action-btn.del:hover {
+    border-color: var(--red);
+    color: var(--red);
+    background: rgba(239,68,68,0.08);
+  }
+
+  /* 添加模型弹窗 */
+  .add-model-input {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    outline: none;
+    transition: border-color 0.2s;
+    margin-bottom: 0.5rem;
+  }
+  .light-mode .add-model-input { background: rgba(0,0,0,0.03); }
+  .add-model-input:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+  }
+  .add-model-input::placeholder { color: var(--text-dim); }
+  .add-model-label {
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-bottom: 0.25rem;
+    display: block;
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-layer"></div>
+
+<div class="container">
+  <!-- 顶部 -->
+  <div class="header animate-in">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-emoji" style="font-size:2rem">&gt;_</span>
+        <div>
+          <div class="logo-text">OpenClaw</div>
+          <div class="logo-sub">状态监控面板</div>
+        </div>
+      </div>
+    </div>
+    <div class="header-right">
+      <!-- 壁纸按钮 -->
+      <button class="icon-btn" id="wallpaperBtn" title="自定义壁纸">
+        🖼️
+        <span class="tooltip">自定义壁纸</span>
+      </button>
+      <!-- Logo 按钮 -->
+      <button class="icon-btn" id="logoBtn" title="自定义 Logo">
+        🎨
+        <span class="tooltip">自定义 Logo</span>
+      </button>
+      <!-- 页面透明度 -->
+      <button class="icon-btn" id="opacityBtn" title="页面透明度">
+        🔆
+        <span class="tooltip">页面透明度</span>
+      </button>
+      <!-- 日夜切换 -->
+      <button class="icon-btn" id="themeBtn" title="切换主题">
+        <span id="themeIcon">🌙</span>
+        <span class="tooltip">切换日夜</span>
+      </button>
+      <div class="live-dot"></div>
+      <div>
+        <div class="refresh-text">实时 · <span id="countdown">30s</span> 后刷新</div>
+        <div class="last-update" id="lastUpdate">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gateway 状态条 -->
+  <div class="gateway-banner animate-in delay-1" id="gatewayBanner">
+    <div class="gateway-status-icon" id="gwIcon">⏳</div>
+    <div class="gateway-info">
+      <div class="gateway-label">网关服务</div>
+      <div class="gateway-state" id="gwState">加载中...</div>
+      <div class="gateway-meta" id="gwMeta"></div>
+    </div>
+    <div class="ctrl-btn-group">
+      <button class="ctrl-btn success" id="gwStartBtn" onclick="gwAction('start')" style="font-size:0.72rem;padding:0.35rem 0.75rem">▶ 启动</button>
+      <button class="ctrl-btn danger" id="gwStopBtn" onclick="gwAction('stop')" style="font-size:0.72rem;padding:0.35rem 0.75rem">⏹ 停止</button>
+      <button class="ctrl-btn primary" id="gwRestartBtn" onclick="gwAction('restart')" style="font-size:0.72rem;padding:0.35rem 0.75rem">🔄 重启</button>
+    </div>
+  </div>
+  <div id="gwActionMsg" style="font-family:var(--mono);font-size:0.72rem;color:var(--text-dim);margin-top:-0.8rem;margin-bottom:1.5rem;min-height:1.2em;position:relative;z-index:1"></div>
+
+  <!-- 网关连接信息 -->
+  <div id="gwInfoBar" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:-1rem;margin-bottom:1.5rem;position:relative;z-index:1">
+    <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.72rem;font-family:var(--mono);color:var(--text-dim);background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.6rem">
+      <span>🌐 访问IP</span>
+      <span id="gwVisitorIp" style="color:var(--text)">—</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.72rem;font-family:var(--mono);color:var(--text-dim);background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.6rem">
+      <span>🔑 Token</span>
+      <span id="gwToken" style="color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span>
+      <button onclick="copyGwToken()" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:0.72rem;padding:0" title="复制">📋</button>
+    </div>
+    <a id="gwPanelLink" href="#" target="_blank" style="display:flex;align-items:center;gap:0.4rem;font-size:0.72rem;font-family:var(--mono);color:var(--blue);background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:6px;padding:0.3rem 0.6rem;text-decoration:none">
+      <span>🖥️ 打开面板</span>
+    </a>
+  </div>
+
+  <!-- 指标卡片 -->
+  <div class="stats-grid">
+    <div class="stat-card animate-in delay-2">
+      <div class="stat-label">⏱ 运行时间</div>
+      <div class="stat-value" id="uptime">—</div>
+    </div>
+    <div class="stat-card animate-in delay-3">
+      <div class="stat-label">🧠 CPU 负载</div>
+      <div class="stat-value" id="cpuLoad">—</div>
+      <div class="stat-detail" id="cpuDetail"></div>
+      <div class="progress-bar"><div class="progress-fill green" id="cpuBar" style="width:0%"></div></div>
+    </div>
+    <div class="stat-card animate-in delay-4">
+      <div class="stat-label">
+        💾 内存使用
+        <button class="cache-btn" id="clearCacheBtn" title="清理系统缓存">🧹 清理缓存</button>
+      </div>
+      <div class="stat-value" id="memUsage">—</div>
+      <div class="stat-detail" id="memDetail"></div>
+      <div class="progress-bar"><div class="progress-fill green" id="memBar" style="width:0%"></div></div>
+    </div>
+    <div class="stat-card animate-in delay-5">
+      <div class="stat-label">💿 磁盘使用</div>
+      <div class="stat-value" id="diskUsage">—</div>
+      <div class="stat-detail" id="diskDetail"></div>
+      <div class="progress-bar"><div class="progress-fill green" id="diskBar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- 面板 -->
+  <div class="panels">
+    <div class="panel animate-in delay-5">
+      <div class="panel-header">
+        <div class="panel-title">⚡ 热门进程</div>
+      </div>
+      <div class="panel-body" id="processList">加载中...</div>
+    </div>
+    <div class="panel animate-in delay-6">
+      <div class="panel-header">
+        <div class="panel-title">🔗 活跃会话</div>
+        <div class="panel-badge" id="sessionCount">0</div>
+      </div>
+      <div class="panel-body" id="sessionList">加载中...</div>
+    </div>
+  </div>
+
+  <!-- 系统信息 -->
+  <div class="panel animate-in delay-6" style="margin-bottom:1.5rem">
+    <div class="panel-header">
+      <div class="panel-title">🖥 系统信息</div>
+    </div>
+    <div class="panel-body">
+      <div class="info-grid" id="systemInfo">加载中...</div>
+    </div>
+  </div>
+
+  <!-- 模型管理 -->
+  <div class="panel animate-in delay-6" style="margin-bottom:1.5rem">
+    <div class="panel-header">
+      <div class="panel-title">🤖 模型管理</div>
+      <button class="ctrl-btn primary" id="addModelBtn" onclick="showAddModel()" style="font-size:0.72rem;padding:0.3rem 0.7rem">+ 添加</button>
+    </div>
+    <div class="panel-body">
+      <div id="currentModelBar" style="display:flex;margin-bottom:0.75rem;padding:0.6rem 0.8rem;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:8px;align-items:center;gap:0.6rem">
+        <span style="font-size:0.65rem;color:var(--green);font-family:var(--sans);background:rgba(34,197,94,0.15);padding:0.15rem 0.45rem;border-radius:4px;white-space:nowrap">当前使用</span>
+        <span id="currentModelName" style="font-family:var(--mono);font-size:0.82rem;color:var(--text-bright);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        <span id="currentModelProv" style="font-family:var(--sans);font-size:0.62rem;color:var(--text-dim)"></span>
+      </div>
+      <div class="model-list" id="modelList">加载中...</div>
+    </div>
+  </div>
+
+  <!-- 添加模型弹窗 -->
+  <div class="modal-overlay" id="addModelModal">
+    <div class="modal">
+      <div class="modal-title">🤖 添加模型</div>
+      <div class="modal-sub">填写模型配置信息</div>
+
+      <label class="add-model-label">模型 ID *</label>
+      <input type="text" class="add-model-input" id="mId" placeholder="例: gpt-4o, deepseek-chat">
+
+      <label class="add-model-label">显示名称</label>
+      <input type="text" class="add-model-input" id="mName" placeholder="例: GPT-4o">
+
+      <label class="add-model-label">Provider *</label>
+      <input type="text" class="add-model-input" id="mProvider" placeholder="例: openai, deepseek, xiaomi">
+
+      <label class="add-model-label">API Key</label>
+      <input type="password" class="add-model-input" id="mApiKey" placeholder="可选，API 密钥">
+
+      <label class="add-model-label">Base URL</label>
+      <input type="text" class="add-model-input" id="mBaseUrl" placeholder="可选，例: https://api.openai.com/v1">
+
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="hideAddModel()">取消</button>
+        <button class="modal-btn primary" onclick="addModel()">添加</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    OpenClaw 状态监控 · 每 30 秒自动刷新 · <a href="/api/status" target="_blank">原始 API</a>
+  </div>
+</div>
+
+<!-- 透明度弹窗 -->
+<div class="opacity-popup" id="opacityPopup">
+  <div class="opacity-popup-title">
+    <span>🔆 页面透明度</span>
+    <span id="opacityValue">100%</span>
+  </div>
+  <input type="range" class="opacity-slider" id="opacitySlider" min="30" max="100" value="100" step="1">
+  <div class="opacity-presets">
+    <button class="opacity-preset-btn" data-value="50">50%</button>
+    <button class="opacity-preset-btn" data-value="75">75%</button>
+    <button class="opacity-preset-btn active" data-value="100">100%</button>
+  </div>
+</div>
+
+<!-- 壁纸弹窗 -->
+<div class="modal-overlay" id="wallpaperModal">
+  <div class="modal">
+    <div class="modal-title">🖼️ 自定义壁纸</div>
+    <div class="modal-sub">上传本地图片、输入链接或选择预设壁纸</div>
+
+    <!-- 上传区域 -->
+    <div class="upload-zone" id="wallpaperUploadZone">
+      <input type="file" id="wallpaperFileInput" accept="image/*">
+      <div class="upload-zone-icon">📁</div>
+      <div class="upload-zone-text">点击或拖拽图片到此处上传</div>
+      <div class="upload-zone-hint">支持 JPG / PNG / GIF / WebP，自动转为 Data URL</div>
+    </div>
+    <div class="upload-preview" id="wallpaperPreview"><img id="wallpaperPreviewImg" src="" alt=""></div>
+
+    <div class="wallpaper-presets">
+      <div class="wallpaper-preset" data-url="https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=1920&q=80" style="background-image:url('https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=100&q=50')" title="星云"></div>
+      <div class="wallpaper-preset" data-url="https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=1920&q=80" style="background-image:url('https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=100&q=50')" title="渐变蓝"></div>
+      <div class="wallpaper-preset" data-url="https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&q=80" style="background-image:url('https://images.unsplash.com/photo-1519681393784-d120267933ba?w=100&q=50')" title="雪山星空"></div>
+      <div class="wallpaper-preset" data-url="https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=1920&q=80" style="background-image:url('https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=100&q=50')" title="紫渐变"></div>
+      <div class="wallpaper-preset" data-url="https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1920&q=80" style="background-image:url('https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=100&q=50')" title="森林晨雾"></div>
+      <div class="wallpaper-preset" data-url="" style="background-image:none;background-color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--text-dim)" title="清除壁纸">✕</div>
+    </div>
+
+    <input type="text" class="modal-input" id="wallpaperInput" placeholder="输入图片 URL...">
+
+    <div class="modal-actions">
+      <button class="modal-btn danger" id="wallpaperClear">清除壁纸</button>
+      <button class="modal-btn" id="wallpaperCancel">取消</button>
+      <button class="modal-btn primary" id="wallpaperApply">应用</button>
+    </div>
+  </div>
+</div>
+
+<!-- Logo 弹窗 -->
+<div class="modal-overlay" id="logoModal">
+  <div class="modal">
+    <div class="modal-title">🎨 自定义 Logo</div>
+    <div class="modal-sub">选择 Emoji 或上传自定义图标</div>
+
+    <div class="logo-img-preview" id="logoPreview">&gt;_</div>
+
+    <!-- 上传 Logo -->
+    <div class="upload-zone" id="logoUploadZone" style="padding:0.8rem">
+      <input type="file" id="logoFileInput" accept="image/*">
+      <div class="upload-zone-icon" style="font-size:1.2rem">📷</div>
+      <div class="upload-zone-text">上传自定义 Logo 图片</div>
+    </div>
+
+    <!-- Emoji 选择 -->
+    <div class="logo-emoji-grid">
+      <button class="logo-emoji-btn active" data-emoji=">_">&gt;_</button>
+      <button class="logo-emoji-btn" data-emoji="🤖">🤖</button>
+      <button class="logo-emoji-btn" data-emoji="🧠">🧠</button>
+      <button class="logo-emoji-btn" data-emoji="⚡">⚡</button>
+      <button class="logo-emoji-btn" data-emoji="🚀">🚀</button>
+      <button class="logo-emoji-btn" data-emoji="💎">💎</button>
+      <button class="logo-emoji-btn" data-emoji="🔮">🔮</button>
+      <button class="logo-emoji-btn" data-emoji="🌟">🌟</button>
+      <button class="logo-emoji-btn" data-emoji="🎮">🎮</button>
+      <button class="logo-emoji-btn" data-emoji="🔥">🔥</button>
+      <button class="logo-emoji-btn" data-emoji="🐧">🐧</button>
+      <button class="logo-emoji-btn" data-emoji="🐱">🐱</button>
+      <button class="logo-emoji-btn" data-emoji="🦊">🦊</button>
+      <button class="logo-emoji-btn" data-emoji="🐉">🐉</button>
+      <button class="logo-emoji-btn" data-emoji="🌈">🌈</button>
+      <button class="logo-emoji-btn" data-emoji="🎯">🎯</button>
+    </div>
+
+    <div class="form-label" style="margin-bottom:0.25rem">自定义标题</div>
+    <input type="text" class="modal-input" id="logoTitleInput" placeholder="OpenClaw">
+
+    <div class="form-label" style="margin-bottom:0.25rem">自定义副标题</div>
+    <input type="text" class="modal-input" id="logoSubInput" placeholder="状态监控面板">
+
+    <div class="modal-actions">
+      <button class="modal-btn danger" id="logoReset">恢复默认</button>
+      <button class="modal-btn" id="logoCancel">取消</button>
+      <button class="modal-btn primary" id="logoApply">应用</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/status';
+let countdown = 30;
+
+// ─── 工具函数 ─────────────────────────────────────────────
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function barColor(pct) {
+  if (pct < 60) return 'green';
+  if (pct < 85) return 'amber';
+  return 'red';
+}
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const t = typeof ts === 'number' ? ts : new Date(ts).getTime();
+  const diff = Date.now() - t;
+  if (diff < 0) return '刚刚';
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前';
+  return Math.floor(diff / 86400000) + ' 天前';
+}
+
+function formatTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// ─── 日夜主题切换 ─────────────────────────────────────────
+
+function applyTheme(mode) {
+  if (mode === 'light') {
+    document.body.classList.add('light-mode');
+    document.getElementById('themeIcon').textContent = '☀️';
+  } else {
+    document.body.classList.remove('light-mode');
+    document.getElementById('themeIcon').textContent = '🌙';
+  }
+  localStorage.setItem('oc-theme', mode);
+}
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const current = localStorage.getItem('oc-theme') || 'dark';
+  applyTheme(current === 'dark' ? 'light' : 'dark');
+});
+
+// 初始化主题
+applyTheme(localStorage.getItem('oc-theme') || 'dark');
+
+// ─── 自定义壁纸 ───────────────────────────────────────────
+
+function applyWallpaper(url) {
+  if (url) {
+    document.body.style.setProperty('--wallpaper-url', `url('${url}')`);
+    document.body.style.cssText = '';
+    const style = document.createElement('style');
+    style.id = 'wallpaper-style';
+    const old = document.getElementById('wallpaper-style');
+    if (old) old.remove();
+    style.textContent = `body::after { background-image: url('${url}') !important; }`;
+    document.head.appendChild(style);
+    document.body.classList.add('has-wallpaper');
+  } else {
+    document.body.classList.remove('has-wallpaper');
+    const old = document.getElementById('wallpaper-style');
+    if (old) old.remove();
+  }
+  localStorage.setItem('oc-wallpaper', url || '');
+}
+
+// 初始化壁纸
+const savedWallpaper = localStorage.getItem('oc-wallpaper');
+if (savedWallpaper) applyWallpaper(savedWallpaper);
+
+// 弹窗控制
+const wallpaperModal = document.getElementById('wallpaperModal');
+const wallpaperInput = document.getElementById('wallpaperInput');
+const wallpaperFileInput = document.getElementById('wallpaperFileInput');
+const wallpaperPreview = document.getElementById('wallpaperPreview');
+const wallpaperPreviewImg = document.getElementById('wallpaperPreviewImg');
+const wallpaperUploadZone = document.getElementById('wallpaperUploadZone');
+
+document.getElementById('wallpaperBtn').addEventListener('click', () => {
+  wallpaperInput.value = localStorage.getItem('oc-wallpaper') || '';
+  wallpaperModal.classList.add('show');
+  wallpaperInput.focus();
+});
+
+document.getElementById('wallpaperCancel').addEventListener('click', () => {
+  wallpaperModal.classList.remove('show');
+  hideWallpaperPreview();
+});
+
+wallpaperModal.addEventListener('click', (e) => {
+  if (e.target === wallpaperModal) {
+    wallpaperModal.classList.remove('show');
+    hideWallpaperPreview();
+  }
+});
+
+document.getElementById('wallpaperApply').addEventListener('click', () => {
+  // 优先使用上传的图片 data URL，其次用输入框
+  const dataUrl = wallpaperPreviewImg.dataset.dataurl;
+  applyWallpaper(dataUrl || wallpaperInput.value.trim());
+  wallpaperModal.classList.remove('show');
+  hideWallpaperPreview();
+});
+
+document.getElementById('wallpaperClear').addEventListener('click', () => {
+  wallpaperInput.value = '';
+  applyWallpaper('');
+  wallpaperModal.classList.remove('show');
+  hideWallpaperPreview();
+});
+
+// 预设壁纸
+document.querySelectorAll('.wallpaper-preset').forEach(el => {
+  el.addEventListener('click', () => {
+    const url = el.dataset.url;
+    wallpaperInput.value = url;
+    applyWallpaper(url);
+    wallpaperModal.classList.remove('show');
+    hideWallpaperPreview();
+  });
+});
+
+wallpaperInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    applyWallpaper(wallpaperInput.value.trim());
+    wallpaperModal.classList.remove('show');
+  }
+});
+
+// ─── 壁纸文件上传 ────────────────────────────────────────
+
+function showWallpaperPreview(dataUrl) {
+  wallpaperPreviewImg.src = dataUrl;
+  wallpaperPreviewImg.dataset.dataurl = dataUrl;
+  wallpaperPreview.classList.add('show');
+  wallpaperUploadZone.querySelector('.upload-zone-text').textContent = '✅ 图片已加载，点击可重新选择';
+}
+function hideWallpaperPreview() {
+  wallpaperPreview.classList.remove('show');
+  wallpaperPreviewImg.src = '';
+  wallpaperPreviewImg.dataset.dataurl = '';
+  wallpaperUploadZone.querySelector('.upload-zone-text').textContent = '点击或拖拽图片到此处上传';
+}
+
+function handleWallpaperFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    showWallpaperPreview(e.target.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+wallpaperFileInput.addEventListener('change', (e) => {
+  if (e.target.files[0]) handleWallpaperFile(e.target.files[0]);
+});
+
+// 拖拽上传
+wallpaperUploadZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  wallpaperUploadZone.classList.add('dragover');
+});
+wallpaperUploadZone.addEventListener('dragleave', () => {
+  wallpaperUploadZone.classList.remove('dragover');
+});
+wallpaperUploadZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  wallpaperUploadZone.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) handleWallpaperFile(e.dataTransfer.files[0]);
+});
+
+// ─── 自定义 Logo ─────────────────────────────────────────
+
+const logoModal = document.getElementById('logoModal');
+const logoPreview = document.getElementById('logoPreview');
+const logoTitleInput = document.getElementById('logoTitleInput');
+const logoSubInput = document.getElementById('logoSubInput');
+const logoFileInput = document.getElementById('logoFileInput');
+let currentLogoType = 'emoji'; // 'emoji' or 'image'
+let currentLogoValue = '>_';
+
+function applyLogo(type, value, title, sub) {
+  const logoEl = document.querySelector('.logo');
+  const logoIcon = logoEl.querySelector('span:first-child') || logoEl.childNodes[0];
+  const titleEl = document.querySelector('.logo-text');
+  const subEl = document.querySelector('.logo-sub');
+
+  if (type === 'image') {
+    // 用 img 替换 emoji
+    let img = logoEl.querySelector('img.logo-img');
+    if (!img) {
+      img = document.createElement('img');
+      img.className = 'logo-img';
+      img.style.cssText = 'width:36px;height:36px;border-radius:8px;object-fit:cover;';
+      if (logoIcon && logoIcon.nodeType === 3) logoIcon.textContent = '';
+      else if (logoIcon) logoIcon.textContent = '';
+      logoEl.insertBefore(img, logoEl.firstChild);
+    }
+    img.src = value;
+    img.style.display = '';
+    // 隐藏 emoji
+    const emojiSpan = logoEl.querySelector('.logo-emoji');
+    if (emojiSpan) emojiSpan.style.display = 'none';
+  } else {
+    // 恢复 emoji
+    const img = logoEl.querySelector('img.logo-img');
+    if (img) img.style.display = 'none';
+    let emojiSpan = logoEl.querySelector('.logo-emoji');
+    if (!emojiSpan) {
+      emojiSpan = document.createElement('span');
+      emojiSpan.className = 'logo-emoji';
+      emojiSpan.style.fontSize = '2rem';
+      logoEl.insertBefore(emojiSpan, logoEl.firstChild);
+    }
+    emojiSpan.textContent = value;
+    emojiSpan.style.display = '';
+  }
+
+  if (title !== undefined) titleEl.textContent = title || 'OpenClaw';
+  if (sub !== undefined) subEl.textContent = sub || '状态监控面板';
+
+  localStorage.setItem('oc-logo', JSON.stringify({ type, value, title: title || 'OpenClaw', sub: sub || '状态监控面板' }));
+}
+
+// 初始化 Logo
+const savedLogo = localStorage.getItem('oc-logo');
+if (savedLogo) {
+  try {
+    const l = JSON.parse(savedLogo);
+    applyLogo(l.type, l.value, l.title, l.sub);
+    currentLogoType = l.type;
+    currentLogoValue = l.value;
+  } catch {}
+}
+
+document.getElementById('logoBtn').addEventListener('click', () => {
+  // 填充当前值
+  const saved = localStorage.getItem('oc-logo');
+  if (saved) {
+    try {
+      const l = JSON.parse(saved);
+      logoTitleInput.value = l.title || '';
+      logoSubInput.value = l.sub || '';
+      if (l.type === 'image') {
+        logoPreview.innerHTML = `<img src="${l.value}" alt="">`;
+      } else {
+        logoPreview.textContent = l.value;
+      }
+    } catch {}
+  }
+  logoModal.classList.add('show');
+});
+
+document.getElementById('logoCancel').addEventListener('click', () => {
+  logoModal.classList.remove('show');
+});
+
+logoModal.addEventListener('click', (e) => {
+  if (e.target === logoModal) logoModal.classList.remove('show');
+});
+
+// Emoji 选择
+document.querySelectorAll('.logo-emoji-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.logo-emoji-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentLogoType = 'emoji';
+    currentLogoValue = btn.dataset.emoji;
+    logoPreview.textContent = btn.dataset.emoji;
+    logoPreview.innerHTML = btn.dataset.emoji;
+  });
+});
+
+// Logo 图片上传
+function handleLogoFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    currentLogoType = 'image';
+    currentLogoValue = e.target.result;
+    logoPreview.innerHTML = `<img src="${e.target.result}" alt="">`;
+    document.querySelectorAll('.logo-emoji-btn').forEach(b => b.classList.remove('active'));
+  };
+  reader.readAsDataURL(file);
+}
+
+logoFileInput.addEventListener('change', (e) => {
+  if (e.target.files[0]) handleLogoFile(e.target.files[0]);
+});
+
+const logoUploadZone = document.getElementById('logoUploadZone');
+logoUploadZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  logoUploadZone.classList.add('dragover');
+});
+logoUploadZone.addEventListener('dragleave', () => {
+  logoUploadZone.classList.remove('dragover');
+});
+logoUploadZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  logoUploadZone.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) handleLogoFile(e.dataTransfer.files[0]);
+});
+
+// 应用 Logo
+document.getElementById('logoApply').addEventListener('click', () => {
+  applyLogo(currentLogoType, currentLogoValue, logoTitleInput.value, logoSubInput.value);
+  logoModal.classList.remove('show');
+});
+
+// 恢复默认
+document.getElementById('logoReset').addEventListener('click', () => {
+  localStorage.removeItem('oc-logo');
+  const logoEl = document.querySelector('.logo');
+  const img = logoEl.querySelector('img.logo-img');
+  if (img) img.remove();
+  let emojiSpan = logoEl.querySelector('.logo-emoji');
+  if (!emojiSpan) {
+    emojiSpan = document.createElement('span');
+    emojiSpan.className = 'logo-emoji';
+    emojiSpan.style.fontSize = '2rem';
+    logoEl.insertBefore(emojiSpan, logoEl.firstChild);
+  }
+  emojiSpan.textContent = '>_';
+  emojiSpan.style.display = '';
+  document.querySelector('.logo-text').textContent = 'OpenClaw';
+  document.querySelector('.logo-sub').textContent = '状态监控面板';
+  currentLogoType = 'emoji';
+  currentLogoValue = '>_';
+  logoTitleInput.value = '';
+  logoSubInput.value = '';
+  logoPreview.textContent = '>_';
+  document.querySelectorAll('.logo-emoji-btn').forEach(b => b.classList.remove('active'));
+  const defaultBtn = document.querySelector('.logo-emoji-btn[data-emoji=">_"]');
+  if (defaultBtn) defaultBtn.classList.add('active');
+  logoModal.classList.remove('show');
+});
+
+// ─── 页面透明度 ───────────────────────────────────────────
+
+function applyOpacity(val) {
+  // 仅调整背景层透明度，内容不受影响
+  const alpha = val / 100;
+  document.body.style.setProperty('--bg-alpha', alpha);
+  document.getElementById('opacityValue').textContent = val + '%';
+  // 更新预设按钮状态
+  document.querySelectorAll('.opacity-preset-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.value) === val);
+  });
+  localStorage.setItem('oc-opacity', val);
+}
+
+// 初始化透明度
+const savedOpacity = parseInt(localStorage.getItem('oc-opacity')) || 100;
+document.getElementById('opacitySlider').value = savedOpacity;
+applyOpacity(savedOpacity);
+
+const opacityPopup = document.getElementById('opacityPopup');
+const opacitySlider = document.getElementById('opacitySlider');
+
+document.getElementById('opacityBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  opacityPopup.classList.toggle('show');
+});
+
+opacitySlider.addEventListener('input', () => {
+  applyOpacity(parseInt(opacitySlider.value));
+});
+
+document.querySelectorAll('.opacity-preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const val = parseInt(btn.dataset.value);
+    opacitySlider.value = val;
+    applyOpacity(val);
+  });
+});
+
+// 点击外部关闭
+document.addEventListener('click', (e) => {
+  if (!opacityPopup.contains(e.target) && e.target.id !== 'opacityBtn') {
+    opacityPopup.classList.remove('show');
+  }
+});
+
+// ─── 数据获取与渲染 ───────────────────────────────────────
+
+async function fetchData() {
+  try {
+    const res = await fetch(API);
+    const d = await res.json();
+    render(d);
+  } catch (e) {
+    console.error('请求失败:', e);
+  }
+}
+
+function render(d) {
+  document.getElementById('lastUpdate').textContent = '更新于 ' + formatTime(d.timestamp);
+
+  const gw = d.gateway || {};
+  const banner = document.getElementById('gatewayBanner');
+  const isUp = gw.status === 'running' || gw.status === 'active';
+  banner.className = 'gateway-banner animate-in ' + (isUp ? 'running' : (gw.status || 'unknown'));
+  document.getElementById('gwIcon').textContent = isUp ? '🟢' : '🔴';
+  const gwState = document.getElementById('gwState');
+  gwState.textContent = isUp ? '运行中' : (gw.status === 'inactive' ? '已停止' : (gw.status || '未知'));
+  gwState.className = 'gateway-state ' + (isUp ? 'up' : 'down');
+  const pidInfo = gw.gatewayPid ? `网关进程 ${gw.gatewayPid}` : '';
+  const mainInfo = gw.mainPid ? `主进程 ${gw.mainPid}` : '';
+  document.getElementById('gwMeta').textContent =
+    [pidInfo, mainInfo, gw.processes ? `${gw.processes} 个进程` : ''].filter(Boolean).join(' · ');
+
+  if (d.uptime) document.getElementById('uptime').textContent = d.uptime.formatted;
+
+  if (d.load && d.cpu) {
+    const load1 = d.load['1m'];
+    const pct = Math.min(Math.round((load1 / d.cpu.cores) * 100), 100);
+    document.getElementById('cpuLoad').textContent = load1.toFixed(2);
+    document.getElementById('cpuDetail').textContent = `${d.cpu.cores} 核 · 利用率 ${pct}%`;
+    const cpuBar = document.getElementById('cpuBar');
+    cpuBar.style.width = pct + '%';
+    cpuBar.className = 'progress-fill ' + barColor(pct);
+  }
+
+  if (d.memory) {
+    const m = d.memory;
+    document.getElementById('memUsage').textContent = m.usedPercent + '%';
+    document.getElementById('memDetail').textContent = `${formatBytes(m.used)} / ${formatBytes(m.total)}`;
+    const memBar = document.getElementById('memBar');
+    memBar.style.width = m.usedPercent + '%';
+    memBar.className = 'progress-fill ' + barColor(m.usedPercent);
+  }
+
+  if (d.disk) {
+    const pct = d.disk.usedPercent;
+    document.getElementById('diskUsage').textContent = pct + '%';
+    document.getElementById('diskDetail').textContent = `${formatBytes(d.disk.used)} / ${formatBytes(d.disk.total)}`;
+    const diskBar = document.getElementById('diskBar');
+    diskBar.style.width = pct + '%';
+    diskBar.className = 'progress-fill ' + barColor(pct);
+  }
+
+  const procEl = document.getElementById('processList');
+  if (d.topProcesses && d.topProcesses.length) {
+    procEl.innerHTML = d.topProcesses.map(p => `
+      <div class="process-item">
+        <span class="process-cpu">${p.cpu}%</span>
+        <span class="process-mem">${p.mem}%</span>
+        <span class="process-cmd" title="${p.command}">${p.command}</span>
+      </div>
+    `).join('');
+  } else {
+    procEl.innerHTML = '<div style="color:var(--text-dim);font-family:var(--sans);font-size:0.75rem">暂无数据</div>';
+  }
+
+  const sessEl = document.getElementById('sessionList');
+  document.getElementById('sessionCount').textContent = d.sessions?.total || 0;
+  if (d.sessions?.list?.length) {
+    sessEl.innerHTML = d.sessions.list.map(s => `
+      <div class="session-item">
+        <div class="session-id">${s.id}</div>
+        <div class="session-meta">${s.model} · ${timeAgo(s.lastActive)}</div>
+      </div>
+    `).join('');
+  } else {
+    sessEl.innerHTML = '<div style="color:var(--text-dim);font-family:var(--sans);font-size:0.75rem">暂无活跃会话</div>';
+  }
+
+  const infoEl = document.getElementById('systemInfo');
+  const rows = [];
+  if (d.os) {
+    rows.push(['主机名', d.os.hostname]);
+    rows.push(['内核', d.os.kernel]);
+  }
+  if (d.cpu) rows.push(['处理器', d.cpu.model + ` (${d.cpu.cores} 核)`]);
+  if (d.swap) {
+    const swapTotal = d.swap.total;
+    rows.push(['交换分区', swapTotal > 0 ? `${formatBytes(swapTotal - d.swap.free)} / ${formatBytes(swapTotal)}` : '未启用']);
+  }
+  if (d.network) rows.push(['网络连接', d.network.establishedConnections + ' 个']);
+
+  infoEl.innerHTML = rows.map(([k, v]) => `
+    <span class="info-key">${k}</span>
+    <span class="info-val">${v}</span>
+  `).join('');
+}
+
+// ─── 倒计时 ─────────────────────────────────────────────
+
+setInterval(() => {
+  countdown--;
+  if (countdown <= 0) {
+    countdown = 30;
+    fetchData();
+  }
+  document.getElementById('countdown').textContent = countdown + 's';
+}, 1000);
+
+// ─── 清理缓存 ───────────────────────────────────────────
+
+document.getElementById('clearCacheBtn').addEventListener('click', async function() {
+  const btn = this;
+  if (!confirm('确定要清理系统内存缓存吗？')) return;
+  btn.disabled = true;
+  btn.textContent = '清理中...';
+  try {
+    const res = await fetch('/api/clear-cache', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok && data.memory) {
+      const m = data.memory;
+      document.getElementById('memUsage').textContent = m.usedPercent + '%';
+      document.getElementById('memDetail').textContent = formatBytes(m.used) + ' / ' + formatBytes(m.total);
+      const memBar = document.getElementById('memBar');
+      memBar.style.width = m.usedPercent + '%';
+      memBar.className = 'progress-fill ' + barColor(m.usedPercent);
+      btn.textContent = '✅ 已清理';
+      setTimeout(() => { btn.textContent = '🧹 清理缓存'; btn.disabled = false; }, 2000);
+    } else {
+      btn.textContent = '❌ ' + (data.error || '失败');
+      setTimeout(() => { btn.textContent = '🧹 清理缓存'; btn.disabled = false; }, 2000);
+    }
+  } catch {
+    btn.textContent = '❌ 网络错误';
+    setTimeout(() => { btn.textContent = '🧹 清理缓存'; btn.disabled = false; }, 2000);
+  }
+});
+
+// ─── 网关控制 ─────────────────────────────────────────────
+
+async function gwAction(action) {
+  const btnMap = { start: 'gwStartBtn', stop: 'gwStopBtn', restart: 'gwRestartBtn' };
+  const labelMap = { start: '启动', stop: '停止', restart: '重启' };
+  const btn = document.getElementById(btnMap[action]);
+  const msgEl = document.getElementById('gwActionMsg');
+
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '⏳ 处理中...';
+  msgEl.textContent = '';
+
+  try {
+    const res = await fetch(`/api/gateway/${action}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      msgEl.style.color = 'var(--green)';
+      msgEl.textContent = `✅ ${data.message}`;
+      // 3秒后刷新状态
+      setTimeout(fetchData, 3000);
+    } else {
+      msgEl.style.color = 'var(--red)';
+      msgEl.textContent = `❌ ${data.error}`;
+    }
+  } catch {
+    msgEl.style.color = 'var(--red)';
+    msgEl.textContent = '❌ 网络错误';
+  }
+
+  btn.textContent = origText;
+  btn.disabled = false;
+  // 5秒后清除消息
+  setTimeout(() => { msgEl.textContent = ''; }, 5000);
+}
+
+// ─── 网关连接信息 ───────────────────────────────────────────
+
+async function loadGatewayInfo() {
+  try {
+    const res = await fetch('/api/gateway-info');
+    const data = await res.json();
+    document.getElementById('gwVisitorIp').textContent = data.visitorIp || '—';
+    const tokenShort = data.token ? data.token.slice(0, 8) + '...' + data.token.slice(-4) : '—';
+    document.getElementById('gwToken').textContent = tokenShort;
+    document.getElementById('gwToken').dataset.full = data.token || '';
+    document.getElementById('gwPanelLink').href = data.panelUrl || '#';
+  } catch {}
+}
+
+function copyGwToken() {
+  const full = document.getElementById('gwToken').dataset.full || '';
+  if (!full) return;
+  navigator.clipboard.writeText(full).then(() => {
+    const msgEl = document.getElementById('gwActionMsg');
+    msgEl.style.color = 'var(--green)';
+    msgEl.textContent = '✅ Token 已复制';
+    setTimeout(() => { msgEl.textContent = ''; }, 2000);
+  });
+}
+
+loadGatewayInfo();
+
+// ─── 模型管理 ─────────────────────────────────────────────
+
+async function loadModels() {
+  const el = document.getElementById('modelList');
+  const bar = document.getElementById('currentModelBar');
+  try {
+    const res = await fetch('/api/models');
+    const data = await res.json();
+    if (!data.ok) { el.innerHTML = `<div style="color:var(--red);font-size:0.75rem">${data.error}</div>`; return; }
+
+    // 当前模型高亮栏
+    bar.style.display = 'flex';
+    if (data.currentModel) {
+      const cur = data.models.find(m => m.id === data.currentModel);
+      document.getElementById('currentModelName').textContent = cur ? (cur.name || cur.id) : data.currentModel;
+      document.getElementById('currentModelProv').textContent = cur ? cur.provider : data.currentModel.split('/')[0];
+    } else {
+      document.getElementById('currentModelName').textContent = '未设置';
+      document.getElementById('currentModelProv').textContent = '';
+    }
+
+    if (!data.models.length) {
+      el.innerHTML = '<div style="color:var(--text-dim);font-family:var(--sans);font-size:0.75rem">暂无模型配置</div>';
+      return;
+    }
+    el.innerHTML = data.models.map(m => {
+      const isActive = m.id === data.currentModel;
+      return `
+        <div class="model-item">
+          <span class="model-name" title="${m.id}">${m.name || m.id}</span>
+          <span class="model-provider">${m.provider}</span>
+          ${isActive ? '<span class="model-active">✓ 当前</span>' :
+            `<button class="model-action-btn" onclick="switchModel('${m.id}')">切换</button>`}
+          ${!isActive ? `<button class="model-action-btn del" onclick="deleteModel('${m.id}')">删除</button>` : ''}
+        </div>
+      `;
+    }).join('');
+  } catch {
+    el.innerHTML = '<div style="color:var(--text-dim);font-size:0.75rem">加载失败</div>';
+  }
+}
+
+async function switchModel(modelId) {
+  try {
+    const res = await fetch('/api/models/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modelId })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      loadModels();
+    } else {
+      alert('切换失败: ' + data.error);
+    }
+  } catch {
+    alert('网络错误');
+  }
+}
+
+async function deleteModel(modelId) {
+  if (!confirm(`确定删除模型 ${modelId}？`)) return;
+  try {
+    const res = await fetch('/api/models/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modelId })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      loadModels();
+    } else {
+      alert('删除失败: ' + data.error);
+    }
+  } catch {
+    alert('网络错误');
+  }
+}
+
+function showAddModel() {
+  document.getElementById('addModelModal').classList.add('show');
+  document.getElementById('mId').focus();
+}
+function hideAddModel() {
+  document.getElementById('addModelModal').classList.remove('show');
+  ['mId', 'mName', 'mProvider', 'mApiKey', 'mBaseUrl'].forEach(id => document.getElementById(id).value = '');
+}
+
+document.getElementById('addModelModal').addEventListener('click', (e) => {
+  if (e.target.id === 'addModelModal') hideAddModel();
+});
+
+async function addModel() {
+  const id = document.getElementById('mId').value.trim();
+  const name = document.getElementById('mName').value.trim();
+  const provider = document.getElementById('mProvider').value.trim();
+  const apiKey = document.getElementById('mApiKey').value.trim();
+  const baseUrl = document.getElementById('mBaseUrl').value.trim();
+
+  if (!id || !provider) { alert('模型 ID 和 Provider 为必填项'); return; }
+
+  try {
+    const res = await fetch('/api/models/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, name, provider, apiKey: apiKey || undefined, baseUrl: baseUrl || undefined })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      hideAddModel();
+      loadModels();
+    } else {
+      alert('添加失败: ' + data.error);
+    }
+  } catch {
+    alert('网络错误');
+  }
+}
+
+// ─── 首次加载 ───────────────────────────────────────────
+fetchData();
+loadModels();
+</script>
+</body>
+</html>
