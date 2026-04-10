@@ -6,7 +6,7 @@
 
 ```bash
 # 安装依赖
-npm install
+npm install ws
 
 # 启动
 ./ctl.sh start
