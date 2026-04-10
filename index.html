@@ -471,6 +471,88 @@
     color: var(--blue);
   }
 
+  /* 日期选择器 */
+  .usage-date-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+  }
+  .usage-date-input {
+    padding: 0.45rem 0.8rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .usage-date-input:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+  }
+  .usage-date-btn {
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .usage-date-btn:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: rgba(59,130,246,0.08);
+  }
+  .usage-date-btn.active {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: rgba(59,130,246,0.12);
+  }
+  .usage-date-label {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .usage-daily-summary {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  @media (max-width: 500px) { .usage-daily-summary { grid-template-columns: 1fr; } }
+  .usage-daily-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+  }
+  .usage-daily-label {
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-bottom: 0.4rem;
+  }
+  .usage-daily-value {
+    font-family: var(--mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-bright);
+  }
+  .usage-daily-sub {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-top: 0.3rem;
+  }
+
   .usage-section-title {
     font-size: 0.72rem;
     color: var(--text-dim);
@@ -2261,6 +2343,24 @@ function render(d) {
 
 // ─── 侧滑菜单 ─────────────────────────────────────────────
 
+function hideAllViews() {
+  document.querySelector('.container').style.display = 'none';
+  document.getElementById('settingsView').style.display = 'none';
+  document.getElementById('channelsView').style.display = 'none';
+  document.getElementById('usageView').style.display = 'none';
+}
+
+function showDashboard() {
+  hideAllViews();
+  document.querySelector('.container').style.display = '';
+  // 确保菜单按钮和遮罩恢复到干净状态
+  closeMenu();
+  const toggle = document.getElementById('menuToggle');
+  toggle.style.display = '';
+  toggle.style.pointerEvents = '';
+  toggle.style.opacity = '';
+}
+
 const menuToggle = document.getElementById('menuToggle');
 const sideMenu = document.getElementById('sideMenu');
 const menuOverlay = document.getElementById('menuOverlay');
@@ -2285,16 +2385,13 @@ menuOverlay.addEventListener('click', closeMenu);
 document.getElementById('menuSettingsBtn').addEventListener('click', (e) => {
   e.preventDefault();
   closeMenu();
-  document.querySelector('.container').style.display = 'none';
-  document.getElementById('usageView').style.display = 'none';
-  document.getElementById('channelsView').style.display = 'none';
+  hideAllViews();
   document.getElementById('settingsView').style.display = '';
   loadSettings();
 });
 
 document.getElementById('settingsBackBtn').addEventListener('click', () => {
-  document.getElementById('settingsView').style.display = 'none';
-  document.querySelector('.container').style.display = '';
+  showDashboard();
 });
 
 async function loadSettings() {
@@ -2353,15 +2450,13 @@ document.getElementById('saveOcPathBtn').addEventListener('click', async () => {
 document.getElementById('menuChannelsBtn').addEventListener('click', (e) => {
   e.preventDefault();
   closeMenu();
-  document.querySelector('.container').style.display = 'none';
-  document.getElementById('usageView').style.display = 'none';
+  hideAllViews();
   document.getElementById('channelsView').style.display = '';
   loadChannels();
 });
 
 document.getElementById('channelsBackBtn').addEventListener('click', () => {
-  document.getElementById('channelsView').style.display = 'none';
-  document.querySelector('.container').style.display = '';
+  showDashboard();
 });
 
 async function loadChannels() {
@@ -2426,14 +2521,13 @@ async function loadChannels() {
 document.getElementById('menuUsageBtn').addEventListener('click', (e) => {
   e.preventDefault();
   closeMenu();
-  document.querySelector('.container').style.display = 'none';
+  hideAllViews();
   document.getElementById('usageView').style.display = '';
   loadUsage();
 });
 
 document.getElementById('usageBackBtn').addEventListener('click', () => {
-  document.getElementById('usageView').style.display = 'none';
-  document.querySelector('.container').style.display = '';
+  showDashboard();
 });
 
 function formatNum(n) {
@@ -2442,17 +2536,47 @@ function formatNum(n) {
   return n.toString();
 }
 
-async function loadUsage() {
+let usageDate = '';
+
+async function loadUsage(date) {
   const el = document.getElementById('usageContent');
   el.innerHTML = '<div style="color:var(--text-dim);font-size:0.82rem;text-align:center;padding:3rem 0">加载中...</div>';
+
+  const today = new Date().toISOString().slice(0, 10);
+  const targetDate = date || usageDate || today;
+  usageDate = targetDate;
+
   try {
-    const res = await fetch('/api/usage');
+    const res = await fetch('/api/usage?date=' + encodeURIComponent(targetDate));
     const d = await res.json();
     if (!d.ok) { el.innerHTML = `<div style="color:var(--red);font-size:0.82rem;text-align:center;padding:2rem 0">${d.error}</div>`; return; }
 
     let html = '';
 
-    if (d.sessions.length) {
+    // 日期选择栏
+    html += `<div class="usage-date-bar">
+      <input type="date" class="usage-date-input" id="usageDatePicker" value="${targetDate}" max="${today}">
+      <button class="usage-date-btn ${d.isToday ? 'active' : ''}" onclick="loadUsage('${today}')">今天</button>
+      <button class="usage-date-btn" onclick="loadUsage('${yesterdayStr()}')">昨天</button>
+      <span class="usage-date-label">${d.isToday ? '🟢 今日实时' : '📅 历史数据'}</span>
+    </div>`;
+
+    // 日期总览卡片
+    html += `<div class="usage-daily-summary">
+      <div class="usage-daily-card">
+        <div class="usage-daily-label">📊 ${d.isToday ? '今日' : targetDate} Token 总量</div>
+        <div class="usage-daily-value" style="color:var(--cyan)">${formatNum(d.dailyTokens)}</div>
+        <div class="usage-daily-sub">${d.isToday ? '实时统计' : '当日累计'}</div>
+      </div>
+      <div class="usage-daily-card">
+        <div class="usage-daily-label">💰 ${d.isToday ? '今日' : targetDate} 费用</div>
+        <div class="usage-daily-value" style="color:var(--amber)">${d.dailyCost > 0 ? '$' + d.dailyCost.toFixed(4) : '暂无计费'}</div>
+        <div class="usage-daily-sub">${d.dailyModels.length ? d.dailyModels.length + ' 个模型' : '无费用记录'}</div>
+      </div>
+    </div>`;
+
+    // 会话详情（仅今日）
+    if (d.isToday && d.sessions.length) {
       html += '<div class="usage-section-title">📊 会话 Token 用量</div>';
       for (const s of d.sessions) {
         const pctBar = Math.min(s.percentUsed, 100);
@@ -2490,6 +2614,7 @@ async function loadUsage() {
       }
     }
 
+    // Provider
     if (d.providerUsage.length) {
       html += '<div class="usage-section-title">🏢 Provider 使用</div>';
       for (const p of d.providerUsage) {
@@ -2506,9 +2631,21 @@ async function loadUsage() {
       html = '<div style="color:var(--text-dim);font-size:0.82rem;text-align:center;padding:3rem 0">暂无使用数据</div>';
     }
     el.innerHTML = html;
+
+    // 绑定日期选择器事件
+    const picker = document.getElementById('usageDatePicker');
+    if (picker) {
+      picker.addEventListener('change', () => loadUsage(picker.value));
+    }
   } catch (e) {
     el.innerHTML = `<div style="color:var(--red);font-size:0.82rem;text-align:center;padding:2rem 0">加载失败: ${e.message}</div>`;
   }
+}
+
+function yesterdayStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 // 菜单动作 — 仅保留开关闭合
